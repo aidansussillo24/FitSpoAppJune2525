@@ -10,8 +10,22 @@ import UIKit       // UIImage
 
 struct RemoteImage: View {
 
-    enum Phase {
-        case empty, success(UIImage), failure
+    enum Phase: Equatable {
+        case empty
+        case success(UIImage)
+        case failure
+
+        static func == (lhs: Phase, rhs: Phase) -> Bool {
+            switch (lhs, rhs) {
+            case (.empty, .empty), (.failure, .failure):
+                return true
+            case (.success, .success):
+                // consider any success state equal; the image itself isn't compared
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     @StateObject private var loader: Loader
@@ -37,6 +51,7 @@ struct RemoteImage: View {
                 Image(uiImage: img)
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
+                    .transition(.opacity)
 
             case .failure:
                 ZStack {
@@ -49,6 +64,7 @@ struct RemoteImage: View {
             }
         }
         .onAppear { loader.load() }
+        .animation(.easeInOut(duration: 0.25), value: loader.phase)
     }
 }
 
@@ -72,7 +88,7 @@ private extension RemoteImage {
             guard case .empty = phase,
                   let url = URL(string: urlString) else { return }
 
-            // 1️⃣ check URLCache
+            // 1️⃣ check URLCache
             if let cached = URLCache.shared.cachedResponse(for: URLRequest(url: url)),
                let img     = UIImage(data: cached.data) {
                 phase = .success(img)
