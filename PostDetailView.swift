@@ -1,11 +1,10 @@
-
 //
 //  PostDetailView.swift
 //  FitSpo
 //
 //  Displays one post, its pins, likes & comments.
-//  *2025‑06‑22*  • Image height is capped at a 4:5 ratio so the caption
-//                 area is never pushed below the fold.
+//  *2025-07-01*  • Hot-rank badge redesign: larger circle, gradient,
+//                 bold number overlay for better legibility.
 //
 
 import SwiftUI
@@ -19,6 +18,8 @@ struct PostDetailView: View {
 
     // ── injected
     let post: Post
+    let rank: Int?
+    let navTitle: String
     @Environment(\.dismiss) private var dismiss
 
     // ── author
@@ -58,8 +59,10 @@ struct PostDetailView: View {
     @State private var imgRatio: CGFloat? = nil     // natural h/w
     @State private var faceTags: [UserTag] = []
 
-    init(post: Post) {
+    init(post: Post, rank: Int? = nil, navTitle: String = "Post") {
         self.post = post
+        self.rank = rank
+        self.navTitle = navTitle
         _isLiked     = State(initialValue: post.isLiked)
         _likesCount  = State(initialValue: post.likes)
         _outfitItems = State(initialValue: post.outfitItems ?? [])
@@ -75,7 +78,7 @@ struct PostDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
-                    postImage            // <──── fixed‑height now
+                    postImage            // <──── fixed-height now
                     actionRow
                     captionRow
                     timestampRow
@@ -94,7 +97,7 @@ struct PostDetailView: View {
             }
         }
         .animation(.easeInOut, value: showComments)
-        .navigationTitle("Post")
+        .navigationTitle(navTitle)
         .navigationBarTitleDisplayMode(.inline)
         .alert("Delete Post?", isPresented: $showDeleteConfirm,
                actions: deleteAlertButtons)
@@ -159,7 +162,7 @@ struct PostDetailView: View {
                     .overlay { faceTagOverlay(in: geo, ratio: displayRatio) }
                     .overlay { if showPins { outfitPins(in: geo, ratio: displayRatio) } }
                     .overlay(HeartBurstView(trigger: $showHeart))
-                    // shopping‑bag toggle (bottom‑left corner)
+                    // shopping-bag toggle (bottom-left corner)
                     .overlay(alignment: .bottomLeading) {
                         Button {
                             if outfitItems.isEmpty { showOutfitSheet = true }
@@ -171,6 +174,10 @@ struct PostDetailView: View {
                                 .background(.ultraThickMaterial, in: Circle())
                         }
                         .padding(16)
+                    }
+                    // hot rank badge (bottom-right corner)
+                    .overlay(alignment: .bottomTrailing) {
+                        hotBadge
                     }
             } else {
                 Color.gray.opacity(0.2)
@@ -236,6 +243,40 @@ struct PostDetailView: View {
                     y: t.yNorm * geo.size.width * ratio
                 )
             }
+        }
+    }
+
+    // MARK: – Hot-rank badge  (new design)
+    @ViewBuilder private var hotBadge: some View {
+        if let rank = rank {
+            let size: CGFloat = 36
+
+            ZStack {
+                // gradient background – “heat”
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [Color(red: 1.0, green: 0.62, blue: 0.13),   // #FF9F21
+                                     Color(red: 1.0, green: 0.35, blue: 0.13)],  // #FF5921
+                            startPoint: .topLeading,
+                            endPoint:   .bottomTrailing)
+                    )
+
+                // subtle flame watermark
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 20))
+                    .opacity(0.25)
+                    .foregroundColor(.white)
+
+                // rank number
+                Text("\(rank)")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .shadow(radius: 0.5)
+            }
+            .frame(width: size, height: size)
+            .shadow(color: Color.black.opacity(0.25), radius: 2, y: 1)
+            .padding(16)
         }
     }
 
@@ -368,7 +409,6 @@ struct PostDetailView: View {
             }
         }
     }
-
 
     @ViewBuilder private func deleteAlertButtons() -> some View {
         Button("Delete", role: .destructive, action: performDelete)
