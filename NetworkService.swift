@@ -164,8 +164,15 @@ final class NetworkService {
                         }
                         batch.commit { err in
                             NotificationCenter.default.post(name: .didUploadPost, object: nil)
-                            err == nil ? completion(.success(()))
-                                       : completion(.failure(err!))
+                            if err == nil {
+                                self.handleTagNotifications(postId: doc.documentID,
+                                                           caption: caption,
+                                                           fromUserId: me.uid,
+                                                           taggedUsers: tags)
+                                completion(.success(()))
+                            } else {
+                                completion(.failure(err!))
+                            }
                         }
                     }
                 }
@@ -265,6 +272,11 @@ final class NetworkService {
             var updated = post
             updated.likes   = newLikes
             updated.isLiked = shouldLike
+            if shouldLike {
+                self.handleLikeNotification(postOwnerId: post.userId,
+                                           postId: post.id,
+                                           fromUserId: uid)
+            }
             completion(.success(updated))
         }
     }
