@@ -294,8 +294,9 @@ final class NetworkService {
                     .delete { _ in }
             }
             ref.delete { err in
-                err == nil ? completion(.success(()))
-                           : completion(.failure(err!))
+                if let err { completion(.failure(err)); return }
+                self.deleteNotifications(forPostId: id) { _ in }
+                completion(.success(()))
             }
         }
     }
@@ -397,7 +398,7 @@ final class NetworkService {
     }
 
     // decode Firestore → Post
-    fileprivate static func decodePost(doc: QueryDocumentSnapshot) -> Post? {
+    static func decodePost(doc: QueryDocumentSnapshot) -> Post? {
         let d = doc.data()
         guard
             let uid     = d["userId"]    as? String,

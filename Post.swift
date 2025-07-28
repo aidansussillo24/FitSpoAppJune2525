@@ -14,6 +14,7 @@ struct Post: Identifiable, Codable {
     let userId:    String
     let imageURL:  String
     let caption:   String
+    var username:  String? = nil
     let timestamp: Date
     var likes:     Int
     var isLiked:   Bool
@@ -30,6 +31,7 @@ struct Post: Identifiable, Codable {
 
     // hashtags
     var hashtags: [String]
+
 
     // convenience
     var coordinate: CLLocationCoordinate2D? {
@@ -80,8 +82,18 @@ struct Post: Identifiable, Codable {
 
 
     enum CodingKeys: String, CodingKey {
-        case id, userId, imageURL, caption, timestamp, likes, isLiked
+        case id, userId, imageURL, caption, username, timestamp, likes, isLiked
         case latitude, longitude, temp, weatherIcon, hashtags
         case outfitItems, outfitTags
+    }
+}
+
+// Hashable conformance for navigationDestination(item:)
+extension Post: Hashable {
+    static func == (lhs: Post, rhs: Post) -> Bool {
+        lhs.id == rhs.id
+    }
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
     }
 }

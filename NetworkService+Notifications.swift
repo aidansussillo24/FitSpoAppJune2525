@@ -144,4 +144,30 @@ extension NetworkService {
             }
         }
     }
+
+    // MARK: - Remove notifications for a deleted post
+    /// Delete any notifications that reference the given post ID.
+    func deleteNotifications(forPostId postId: String,
+                             completion: ((Error?) -> Void)? = nil) {
+        db.collectionGroup("notifications")
+            .whereField("postId", isEqualTo: postId)
+            .getDocuments { snap, err in
+                if let err = err { completion?(err); return }
+                let batch = self.db.batch()
+                snap?.documents.forEach { batch.deleteDocument($0.reference) }
+                batch.commit { batchErr in completion?(batchErr) }
+            }
+    }
+
+    // MARK: - Remove a single notification
+    /// Delete the specified notification for the given user.
+    func deleteNotification(userId: String,
+                            notificationId: String,
+                            completion: ((Error?) -> Void)? = nil) {
+        db.collection("users")
+            .document(userId)
+            .collection("notifications")
+            .document(notificationId)
+            .delete { err in completion?(err) }
+    }
 }
