@@ -13,8 +13,8 @@ struct ExploreView: View {
 
     // ────────── Layout constants ──────────
     private let cardWidth: CGFloat = 280
-    private var imageHeight: CGFloat { cardWidth * 5 / 4 }  // 4 : 5 aspect
-    private var cardHeight: CGFloat { imageHeight + 48 + 36 } // header + footer ≈84 pt
+    private var imageHeight: CGFloat { cardWidth * 5 / 4 }  // 4 : 5 aspect
+    private var cardHeight: CGFloat { imageHeight + 48 + 36 + 20 } // header + footer + extra padding
 
     private let spacing: CGFloat = 2
     private var columns: [GridItem] { [GridItem(.adaptive(minimum: 120), spacing: spacing)] }
