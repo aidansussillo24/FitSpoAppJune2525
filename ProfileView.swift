@@ -27,10 +27,12 @@ struct ProfileView: View {
     @State private var avatarURL     = ""
     @State private var email         = ""
     @State private var posts: [Post] = []
+    @State private var taggedPosts: [Post] = []
     @State private var followersCount = 0
     @State private var followingCount = 0
     @State private var isFollowing    = false
     @State private var isLoadingPosts = false
+    @State private var isLoadingTagged = false
     @State private var errorMessage   = ""
     @State private var showingEdit    = false
 
@@ -258,7 +260,7 @@ struct ProfileView: View {
                 }
                 .padding(60)
             } else {
-                LazyVGrid(columns: columns, spacing: 2) {
+                LazyVGrid(columns: columns, spacing: 1) {
                     ForEach(posts) { post in
                         NavigationLink {
                             PostDetailView(post: post)
@@ -273,19 +275,38 @@ struct ProfileView: View {
     }
     
     private var taggedContent: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "tag")
-                .font(.system(size: 50))
-                .foregroundColor(.secondary)
-            Text("No Tagged Posts")
-                .font(.title2)
-                .fontWeight(.bold)
-            Text("Posts you're tagged in will appear here.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+        Group {
+            if isLoadingTagged {
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .padding(60)
+            } else if taggedPosts.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "tag")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary)
+                    Text("No Tagged Posts")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text("Posts you're tagged in will appear here.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(60)
+            } else {
+                LazyVGrid(columns: columns, spacing: 1) {
+                    ForEach(taggedPosts) { post in
+                        NavigationLink {
+                            PostDetailView(post: post)
+                        } label: {
+                            PostCell(post: post)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+            }
         }
-        .padding(60)
     }
     
     private var savedContent: some View {
@@ -370,6 +391,7 @@ private extension ProfileView {
     func loadEverything() {
         loadProfile()
         loadUserPosts()
+        loadTaggedPosts()
         loadFollowState()
         loadFollowCounts()
     }
@@ -393,6 +415,23 @@ private extension ProfileView {
                 isLoadingPosts = false
                 if case .success(let all) = result {
                     posts = all.filter { $0.userId == userId }
+                }
+            }
+        }
+    }
+    
+    func loadTaggedPosts() {
+        print("👤 Loading tagged posts for user ID: \(userId)")
+        isLoadingTagged = true
+        NetworkService.shared.fetchTaggedPosts(for: userId) { result in
+            DispatchQueue.main.async {
+                isLoadingTagged = false
+                switch result {
+                case .success(let tagged):
+                    print("📱 ProfileView received \(tagged.count) tagged posts")
+                    taggedPosts = tagged
+                case .failure(let error):
+                    print("❌ ProfileView error loading tagged posts: \(error.localizedDescription)")
                 }
             }
         }
