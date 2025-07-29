@@ -1,8 +1,9 @@
-//  Replace file: ExploreView.swift
+//
+//  ExploreView.swift
 //  FitSpo
 //
-//  Phase 2.3 – hashtag filtering + full account-list mode
-//  (works with the client-side search above).
+//  Phase 2.3 – hashtag filtering + full account‑list mode
+//
 
 import SwiftUI
 import FirebaseFirestore
@@ -10,20 +11,15 @@ import FirebaseAuth
 
 struct ExploreView: View {
 
+    // ────────── Layout constants ──────────
+    private let cardWidth: CGFloat = 280
+    private var imageHeight: CGFloat { cardWidth * 5 / 4 }  // 4 : 5 aspect
+    private var cardHeight: CGFloat { imageHeight + 48 + 36 } // header + footer ≈84 pt
+
     private let spacing: CGFloat = 2
-    private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: 120), spacing: spacing)]
-    }
+    private var columns: [GridItem] { [GridItem(.adaptive(minimum: 120), spacing: spacing)] }
 
     // ────────── State ──────────
-    @State private var allPosts:  [Post] = []
-    @State private var posts:     [Post] = []
-    @State private var lastDoc:   DocumentSnapshot?
-    @State private var isLoading  = false
-
-    @State private var trendingTags: [String] = []
-
-    // search
     @State private var searchText = ""
     @State private var accountHits: [UserLite] = []
     @State private var isSearchingAccounts = false
@@ -34,17 +30,46 @@ struct ExploreView: View {
     @State private var isSearchingHashtags = false
     @State private var showSuggestions = false
 
-    // chips / filters
-    @State private var selectedChip = "All"
-    private let chips = ["All", "Men", "Women", "Street", "Formal"]
+    // Content sections
+    @State private var topPosts: [Post]        = []
+    @State private var newYorkPosts: [Post]    = []
+    @State private var losAngelesPosts: [Post] = []
+    @State private var sanFranciscoPosts: [Post] = []
+    @State private var miamiPosts: [Post]      = []
+    @State private var chicagoPosts: [Post]    = []
 
-    @State private var filter      = ExploreFilter()
-    @State private var showFilters = false
-
-    @State private var selectedPost: Post? = nil
+    @State private var isLoading = false
 
     private var isAccountMode: Bool {
         !searchText.isEmpty && searchText.first != "#"
+    }
+
+    // MARK: - Content Section (horizontal scrolling cards)
+    private func contentSection(title: String, posts: [Post]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+
+            // Section Title
+            Text(title)
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundColor(.black)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+
+            // Horizontal list of post cards
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(posts) { post in
+                                                 PostCardView(post: post, fixedImageHeight: imageHeight) {
+                             Task { await toggleLike(post) }
+                         }
+                        .frame(width: cardWidth, height: cardHeight)
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(height: cardHeight)
+            .padding(.bottom, 32) // extra space after section
+        }
     }
 
     // ────────── Body ──────────
@@ -54,11 +79,16 @@ struct ExploreView: View {
                 if searchText.isEmpty {
                     // Normal Explore content
                     ScrollView {
-                        LazyVStack(spacing: 0) {
-                            chipRow
-                            trendingTagsRow
-                            grid
+                        LazyVStack(spacing: 24) {
+                            contentSection(title: "Top posts",      posts: topPosts)
+                            contentSection(title: "New York",       posts: newYorkPosts)
+                            contentSection(title: "Los Angeles",    posts: losAngelesPosts)
+                            contentSection(title: "San Francisco",  posts: sanFranciscoPosts)
+                            contentSection(title: "Miami",          posts: miamiPosts)
+                            contentSection(title: "Chicago",        posts: chicagoPosts)
                         }
+                        .padding(.top, 12)
+                        .padding(.bottom, 20)
                     }
                 } else {
                     // Search takes over the entire screen
@@ -66,36 +96,21 @@ struct ExploreView: View {
                 }
             }
             .navigationTitle("Explore")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if searchText.isEmpty {
-                        Image(systemName: "slider.horizontal.3")
-                            .onTapGesture { showFilters = true }
-                    }
+            .searchable(text: $searchText, prompt: "Search accounts or #tags")
+            .onSubmit(of: .search) {
+                if !searchText.isEmpty {
+                    showResults = true
+                    showSuggestions = false
                 }
             }
-            .sheet(isPresented: $showFilters) {
-                if searchText.isEmpty {
-                    ExploreFilterSheet(filter: $filter)
-                        .presentationDetents([.fraction(0.45)])
-                }
-            }
-            .searchable(text: $searchText,
-                        prompt: "Search accounts or #tags")
-            .onSubmit(of: .search) { if !searchText.isEmpty { showResults = true; showSuggestions = false } }
-            .onChange(of: searchText,  perform: handleSearchChange)
-            .onChange(of: selectedChip) { _ in applyFilter() }
-            .onChange(of: filter)       { _ in applyFilter() }
-            .refreshable { await reload(clear: true) }
-            .task        { await coldStart() }
+            .onChange(of: searchText, perform: handleSearchChange)
+            .refreshable { await loadContent() }
+            .task { await loadContent() }
             .navigationDestination(isPresented: $showResults) {
                 SearchResultsView(query: searchText)
             }
             .navigationDestination(item: $selectedUserId) { userId in
                 ProfileView(userId: userId)
-            }
-            .navigationDestination(item: $selectedPost) { post in
-                PostDetailView(post: post)
             }
             .onChange(of: selectedUserId) { newValue in
                 if newValue == nil && !searchText.isEmpty {
@@ -112,71 +127,10 @@ struct ExploreView: View {
         }
     }
 
-    // ────────── Load helpers ──────────
-    private func coldStart() async {
-        while !NetworkService.isOnline {
-            try? await Task.sleep(for: .seconds(1))
-        }
-        await reload(clear: true)
-    }
-
-    private func reload(clear: Bool) async {
-        if isLoading { return }
-        if clear { allPosts.removeAll(); lastDoc = nil }
-        isLoading = true
-        defer { isLoading = false }
-
-        do {
-            let bundle = try await NetworkService.shared
-                .fetchTrendingPosts(startAfter: lastDoc)
-            lastDoc = bundle.lastDoc
-            allPosts.append(contentsOf: bundle.posts)
-            // Deduplicate by post.id
-            var seen = Set<String>()
-            allPosts = allPosts.filter { post in
-                if seen.contains(post.id) { return false }
-                seen.insert(post.id); return true
-            }
-            computeTrendingTags()
-            applyFilter()
-        } catch {
-            print("Explore fetch error:", error.localizedDescription)
-        }
-    }
-
-    private func loadMoreIfNeeded() async {
-        guard !isLoading, lastDoc != nil, !isAccountMode else { return }
-        await reload(clear: false)
-        // Deduplicate after loading more
-        var seen = Set<String>()
-        allPosts = allPosts.filter { post in
-            if seen.contains(post.id) { return false }
-            seen.insert(post.id); return true
-        }
-    }
-
-    // ────────── Trending tags ──────────
-    private func computeTrendingTags() {
-        let sevenDaysAgo =
-        Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-
-        var freq: [String:Int] = [:]
-        for p in allPosts where p.timestamp >= sevenDaysAgo {
-            for tag in p.hashtags { freq[tag, default: 0] += 1 }
-        }
-        trendingTags = freq
-            .sorted { $0.value > $1.value }
-            .prefix(12)
-            .map { $0.key }
-    }
-
     // ────────── Search callbacks ──────────
     private func handleSearchChange(_ q: String) {
         showSuggestions = !q.isEmpty
-        Task {
-            await fetchSuggestions()
-        }
-        applyFilter()
+        Task { await fetchSuggestions() }
     }
 
     private func fetchSuggestions() async {
@@ -222,225 +176,175 @@ struct ExploreView: View {
     }
 
     // ────────── UI pieces ──────────
-    private var chipRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(chips, id: \.self) { chip in
-                    Text(chip)
-                        .font(.subheadline)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 12)
-                        .background(selectedChip == chip
-                                    ? Color.black
-                                    : Color(.systemGray5))
-                        .foregroundColor(selectedChip == chip
-                                         ? .white : .primary)
-                        .clipShape(Capsule())
-                        .onTapGesture { selectedChip = chip }
-                }
-            }
-            .padding(.horizontal, 6)
-        }
-        .padding(.vertical, 6)
-    }
-
-    private var trendingTagsRow: some View {
-        Group {
-            if !trendingTags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(trendingTags, id: \.self) { tag in
-                            Text("#\(tag)")
-                                .font(.subheadline)
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 12)
-                                .background(Color(.systemGray5))
-                                .clipShape(Capsule())
-                                .onTapGesture {
-                                    searchText = "#" + tag
-                                    showResults = true
-                                }
-                        }
-                    }
-                    .padding(.horizontal, 6)
-                }
-                .padding(.bottom, 6)
-            }
-        }
-    }
-
-    private var grid: some View {
-        LazyVGrid(columns: columns, spacing: spacing) {
-            ForEach(posts) { post in
-                NavigationLink {
-                    PostDetailView(post: post)
-                } label: {
-                    ImageTile(url: post.imageURL)
-                }
-                .onAppear {
-                    if post.id == posts.last?.id {
-                        Task { await loadMoreIfNeeded() }
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, spacing / 2)
-        .padding(.bottom, spacing)
-    }
-
     private var searchContent: some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: 8) // Spacing below search bar
-            
+
             if isSearchingAccounts || isSearchingHashtags {
                 VStack {
                     Spacer()
-                    ProgressView()
-                        .padding()
-                    Text("Searching...")
-                        .foregroundColor(.secondary)
+                    ProgressView().padding()
+                    Text("Searching…").foregroundColor(.secondary)
                     Spacer()
                 }
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if searchText.first == "#" {
-                            // Only hashtags
                             if hashtagSuggestions.isEmpty {
-                                VStack {
-                                    Spacer()
-                                    Text("No hashtags found")
-                                        .foregroundColor(.secondary)
-                                        .padding()
-                                    Spacer()
-                                }
+                                emptyState("No hashtags found")
                             } else {
-                                ForEach(hashtagSuggestions, id: \.self) { tag in
-                                    Button(action: {
-                                        searchText = "#" + tag
-                                        showResults = true
-                                        showSuggestions = false
-                                    }) {
-                                        HStack(spacing: 12) {
-                                            Text("#")
-                                                .fontWeight(.bold)
-                                                .foregroundColor(.primary)
-                                            Text(tag)
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                        }
-                                        .padding(.vertical, 14)
-                                        .padding(.horizontal, 20)
-                                    }
-                                    .background(Color.clear)
-                                }
+                                hashtagButtons(hashtagSuggestions)
                             }
                         } else {
-                            // Both accounts and hashtags
                             if accountHits.isEmpty && hashtagSuggestions.isEmpty {
-                                VStack {
-                                    Spacer()
-                                    Text("No results found")
-                                        .foregroundColor(.secondary)
-                                        .padding()
-                                    Spacer()
-                                }
+                                emptyState("No results found")
                             } else {
-                                // Accounts
-                                ForEach(accountHits) { u in
-                                    Button(action: {
-                                        selectedUserId = u.id
-                                        showSuggestions = false
-                                    }) {
-                                        HStack(spacing: 12) {
-                                            AsyncImage(url: URL(string: u.avatarURL)) { phase in
-                                                if let img = phase.image { img.resizable() }
-                                                else { Color.gray.opacity(0.3) }
-                                            }
-                                            .frame(width: 36, height: 36)
-                                            .clipShape(Circle())
-                                            Text(u.displayName)
-                                                .fontWeight(.semibold)
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                        }
-                                        .padding(.vertical, 14)
-                                        .padding(.horizontal, 20)
-                                    }
-                                    .background(Color.clear)
-                                }
-                                // Hashtags
-                                ForEach(hashtagSuggestions, id: \.self) { tag in
-                                    Button(action: {
-                                        searchText = "#" + tag
-                                        showResults = true
-                                        showSuggestions = false
-                                    }) {
-                                        HStack(spacing: 12) {
-                                            Text("#")
-                                                .fontWeight(.bold)
-                                                .foregroundColor(.primary)
-                                            Text(tag)
-                                                .foregroundColor(.primary)
-                                            Spacer()
-                                        }
-                                        .padding(.vertical, 14)
-                                        .padding(.horizontal, 20)
-                                    }
-                                    .background(Color.clear)
-                                }
+                                accountButtons(accountHits)
+                                hashtagButtons(hashtagSuggestions)
                             }
                         }
                     }
-                    .padding(.bottom, 80) // Extra padding at bottom for scrolling
+                    .padding(.bottom, 80)
                 }
             }
         }
     }
 
-    // ────────── Filtering ──────────
-    private func applyFilter() {
-        var filtered = allPosts
+    // MARK: - Helper UI builders
+    @ViewBuilder private func emptyState(_ message: String) -> some View {
+        VStack {
+            Spacer()
+            Text(message).foregroundColor(.secondary).padding()
+            Spacer()
+        }
+    }
 
-        if let season = filter.season {
-            filtered = filtered.filter { p in
-                let m = Calendar.current.component(.month, from: p.timestamp)
-                switch season {
-                case .spring: return (3...5).contains(m)
-                case .summer: return (6...8).contains(m)
-                case .fall:   return (9...11).contains(m)
-                case .winter: return m == 12 || m <= 2
+    @ViewBuilder private func accountButtons(_ users: [UserLite]) -> some View {
+        ForEach(users) { u in
+            Button {
+                selectedUserId = u.id
+                showSuggestions = false
+            } label: {
+                HStack(spacing: 12) {
+                    AsyncImage(url: URL(string: u.avatarURL)) { phase in
+                        if let img = phase.image { img.resizable() }
+                        else { Color.gray.opacity(0.3) }
+                    }
+                    .frame(width: 36, height: 36)
+                    .clipShape(Circle())
+
+                    Text(u.displayName)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding(.vertical, 14)
+                .padding(.horizontal, 20)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder private func hashtagButtons(_ tags: [String]) -> some View {
+        ForEach(tags, id: \.self) { tag in
+            Button {
+                searchText = "#" + tag
+                showResults = true
+                showSuggestions = false
+            } label: {
+                HStack(spacing: 12) {
+                    Text("#").fontWeight(.bold).foregroundColor(.primary)
+                    Text(tag).foregroundColor(.primary)
+                    Spacer()
+                }
+                .padding(.vertical, 14)
+                .padding(.horizontal, 20)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Content Loading
+    private func loadContent() async {
+        isLoading = true
+        defer { isLoading = false }
+
+        await loadTopPosts()
+        newYorkPosts      = await loadCityPosts(city: "New York")
+        losAngelesPosts   = await loadCityPosts(city: "Los Angeles")
+        sanFranciscoPosts = await loadCityPosts(city: "San Francisco")
+        miamiPosts        = await loadCityPosts(city: "Miami")
+        chicagoPosts      = await loadCityPosts(city: "Chicago")
+    }
+
+    private func loadTopPosts() async {
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            NetworkService.shared.fetchPostsPage(pageSize: 10, after: nil) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let (posts, _)):
+                        let recent = posts.filter { $0.timestamp > yesterday }
+                        topPosts = recent.sorted { $0.likes > $1.likes }
+                                         .prefix(10)
+                                         .map { $0 }
+                    case .failure(let error):
+                        print("Failed to load top posts: \(error)")
+                        topPosts = []
+                    }
+                    continuation.resume()
                 }
             }
         }
+    }
 
-        if let band = filter.timeBand {
-            filtered = filtered.filter { p in
-                let h = Calendar.current.component(.hour, from: p.timestamp)
-                switch band {
-                case .morning:   return (5..<11).contains(h)
-                case .afternoon: return (11..<17).contains(h)
-                case .evening:   return (17..<21).contains(h)
-                case .night:     return h >= 21 || h < 5
+    private func loadCityPosts(city: String) async -> [Post] {
+        await withCheckedContinuation { (continuation: CheckedContinuation<[Post], Never>) in
+            NetworkService.shared.fetchPostsPage(pageSize: 8, after: nil) { result in
+                DispatchQueue.main.async {
+                    switch result {
+                    case .success(let (allPosts, _)):
+                        continuation.resume(returning: Array(allPosts.prefix(8)))
+                    case .failure(let error):
+                        print("Failed to load \(city) posts: \(error)")
+                        continuation.resume(returning: [])
+                    }
                 }
             }
         }
+    }
 
-        if selectedChip != "All" {
-            let chip = selectedChip.lowercased()
-            filtered = filtered.filter { $0.hashtags.contains(chip) }
+    private func toggleLike(_ post: Post) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            NetworkService.shared.toggleLike(post: post) { result in
+                DispatchQueue.main.async {
+                    if case .success(let updated) = result {
+                        updatePostInArrays(updated)
+                    }
+                    continuation.resume()
+                }
+            }
         }
+    }
 
-        if searchText.first == "#" {
-            let tag = searchText.dropFirst().lowercased()
-            filtered = filtered.filter { $0.hashtags.contains(tag) }
+    private func updatePostInArrays(_ updated: Post) {
+        func replace(in array: inout [Post]) {
+            if let idx = array.firstIndex(where: { $0.id == updated.id }) {
+                array[idx] = updated
+            }
         }
-
-        posts = filtered
+        replace(in: &topPosts)
+        replace(in: &newYorkPosts)
+        replace(in: &losAngelesPosts)
+        replace(in: &sanFranciscoPosts)
+        replace(in: &miamiPosts)
+        replace(in: &chicagoPosts)
     }
 }
 
-// ────────── Grid image tile ──────────
+// ────────── Grid image tile (unchanged) ──────────
 private struct ImageTile: View {
     let url: String
     var body: some View {

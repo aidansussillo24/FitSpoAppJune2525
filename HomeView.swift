@@ -27,9 +27,7 @@ struct HomeView: View {
     private let PREFETCH_AHEAD = 4            // when ≤4 remain → fetch
     @State private var lastPrefetchIndex = -1 // prevents duplicate calls
 
-    // Hot posts row
-    @State private var hotPosts: [Post] = []
-    @State private var hotRowOffset: CGFloat = -20
+
 
     // Split into two columns
     private var leftColumn:  [Post] { posts.enumerated().filter { $0.offset.isMultiple(of: 2) }.map(\.element) }
@@ -40,7 +38,6 @@ struct HomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
                     header
-                    hotCircleRow                             // ← updated row
 
                     // ── Masonry grid
                     if posts.isEmpty && isLoadingPage {
@@ -69,7 +66,6 @@ struct HomeView: View {
             }
             .refreshable { await refresh() }
             .onAppear(perform: initialLoad)
-            .task { await loadHotPosts() }
             .onReceive(NotificationCenter.default.publisher(for: .didUploadPost)) { _ in
                 Task { await refresh() }
             }
@@ -98,64 +94,7 @@ struct HomeView: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: hot row  (NEW BEHAVIOUR)
-    private var hotCircleRow: some View {
-        Group {
-            if !hotPosts.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
 
-                    // ── Headline: navigates to Hot‑Posts screen
-                    NavigationLink {
-                        HotPostsView()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "flame.fill")
-                                .foregroundColor(.red)
-                            Text("Hot Today")
-                                .font(.headline)
-                            Spacer(minLength: 0)
-                        }
-                        .contentShape(Rectangle())          // bigger tap target
-                    }
-                    .buttonStyle(.plain)
-
-                    // ── Avatars: each navigates to its own post
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(Array(hotPosts.enumerated()), id: \.element.id) { idx, post in
-                                NavigationLink {
-                                    PostDetailView(post: post)
-                                } label: {
-                                    RemoteImage(url: post.imageURL, contentMode: .fill)
-                                        .frame(width: 64, height: 64)
-                                        .clipShape(Circle())
-                                        .overlay(alignment: .bottomTrailing) {
-                                            Text("\(idx + 1)")
-                                                .font(.caption2.weight(.bold))
-                                                .padding(4)
-                                                .background(Color.black.opacity(0.6), in: Circle())
-                                                .foregroundColor(.white)
-                                                .padding(2)
-                                        }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal, 6)
-                        .offset(x: hotRowOffset)
-                        .onAppear {
-                            withAnimation(
-                                .easeInOut(duration: 8)
-                                    .repeatForever(autoreverses: true)
-                            ) { hotRowOffset = 20 }
-                        }
-                    }
-                    .frame(height: 72)
-                }
-                .padding(.horizontal, 12)
-            }
-        }
-    }
 
     // MARK: skeleton grid
     private var skeletonGrid: some View {
@@ -286,26 +225,21 @@ struct HomeView: View {
 
     // MARK: like handling
     private func toggleLike(_ post: Post) {
+        print("HomeView: Toggle like for post: \(post.id), current liked: \(post.isLiked), likes: \(post.likes)")
         NetworkService.shared.toggleLike(post: post) { result in
             DispatchQueue.main.async {
                 if case .success(let updated) = result,
                    let idx = posts.firstIndex(where: { $0.id == updated.id }) {
+                    print("HomeView: Like toggle success - updating post at index \(idx) with likes: \(updated.likes), liked: \(updated.isLiked)")
                     posts[idx] = updated
+                } else if case .failure(let error) = result {
+                    print("HomeView: Like toggle failed: \(error.localizedDescription)")
                 }
             }
         }
     }
 
-    // MARK: load hot posts
-    private func loadHotPosts() async {
-        do {
-            let bundle = try await NetworkService.shared
-                .fetchHotPostsPage(startAfter: nil, limit: 100)
-            await MainActor.run { hotPosts = Array(bundle.posts.prefix(10)) }
-        } catch {
-            print("Hot posts error:", error.localizedDescription)
-        }
-    }
+
 }
 
 #if DEBUG
