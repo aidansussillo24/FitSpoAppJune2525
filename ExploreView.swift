@@ -27,6 +27,7 @@ struct ExploreView: View {
     @State private var selectedUserId: String? = nil
 
     @State private var hashtagSuggestions: [String] = []
+    @State private var hashtagCounts: [String: Int] = [:]
     @State private var isSearchingHashtags = false
     @State private var showSuggestions = false
 
@@ -138,6 +139,7 @@ struct ExploreView: View {
         if trimmed.isEmpty {
             accountHits = []
             hashtagSuggestions = []
+            hashtagCounts = [:]
             return
         }
         if trimmed.first == "#" {
@@ -147,8 +149,19 @@ struct ExploreView: View {
             let prefix = String(trimmed.dropFirst())
             do {
                 hashtagSuggestions = try await NetworkService.shared.suggestHashtags(prefix: prefix)
+                // Get post counts for hashtags
+                hashtagCounts = [:]
+                for tag in hashtagSuggestions {
+                    do {
+                        let posts = try await NetworkService.shared.searchPosts(hashtag: tag, limit: 1)
+                        hashtagCounts[tag] = posts.count
+                    } catch {
+                        hashtagCounts[tag] = 0
+                    }
+                }
             } catch {
                 hashtagSuggestions = []
+                hashtagCounts = [:]
             }
             accountHits = []
         } else {
@@ -167,8 +180,19 @@ struct ExploreView: View {
                 defer { isSearchingHashtags = false }
                 do {
                     hashtagSuggestions = try await NetworkService.shared.suggestHashtags(prefix: trimmed)
+                    // Get post counts for hashtags
+                    hashtagCounts = [:]
+                    for tag in hashtagSuggestions {
+                        do {
+                            let posts = try await NetworkService.shared.searchPosts(hashtag: tag, limit: 1)
+                            hashtagCounts[tag] = posts.count
+                        } catch {
+                            hashtagCounts[tag] = 0
+                        }
+                    }
                 } catch {
                     hashtagSuggestions = []
+                    hashtagCounts = [:]
                 }
             }()
             _ = await (users, hashtags)
@@ -213,55 +237,126 @@ struct ExploreView: View {
 
     // MARK: - Helper UI builders
     @ViewBuilder private func emptyState(_ message: String) -> some View {
-        VStack {
+        VStack(spacing: 16) {
             Spacer()
-            Text(message).foregroundColor(.secondary).padding()
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 48))
+                .foregroundColor(.secondary.opacity(0.5))
+            Text(message)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.secondary)
             Spacer()
         }
+        .padding()
     }
 
     @ViewBuilder private func accountButtons(_ users: [UserLite]) -> some View {
-        ForEach(users) { u in
-            Button {
-                selectedUserId = u.id
-                showSuggestions = false
-            } label: {
-                HStack(spacing: 12) {
-                    AsyncImage(url: URL(string: u.avatarURL)) { phase in
-                        if let img = phase.image { img.resizable() }
-                        else { Color.gray.opacity(0.3) }
-                    }
-                    .frame(width: 36, height: 36)
-                    .clipShape(Circle())
-
-                    Text(u.displayName)
-                        .fontWeight(.semibold)
+        VStack(spacing: 0) {
+            if !users.isEmpty {
+                HStack {
+                    Text("Accounts")
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundColor(.primary)
                     Spacer()
                 }
-                .padding(.vertical, 14)
                 .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                
+                ForEach(users) { u in
+                    Button {
+                        selectedUserId = u.id
+                        showSuggestions = false
+                    } label: {
+                        HStack(spacing: 12) {
+                            AsyncImage(url: URL(string: u.avatarURL)) { phase in
+                                if let img = phase.image { 
+                                    img.resizable().aspectRatio(contentMode: .fill)
+                                } else { 
+                                    Color.gray.opacity(0.3) 
+                                }
+                            }
+                            .frame(width: 44, height: 44)
+                            .clipShape(Circle())
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(u.displayName)
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                Text("@\(u.displayName.lowercased().replacingOccurrences(of: " ", with: ""))")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 20)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    if u.id != users.last?.id {
+                        Divider()
+                            .padding(.leading, 76)
+                    }
+                }
             }
-            .buttonStyle(.plain)
         }
     }
 
     @ViewBuilder private func hashtagButtons(_ tags: [String]) -> some View {
-        ForEach(tags, id: \.self) { tag in
-            Button {
-                searchText = "#" + tag
-                showResults = true
-                showSuggestions = false
-            } label: {
-                HStack(spacing: 12) {
-                    Text("#").fontWeight(.bold).foregroundColor(.primary)
-                    Text(tag).foregroundColor(.primary)
+        VStack(spacing: 0) {
+            if !tags.isEmpty {
+                HStack {
+                    Text("Hashtags")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.primary)
                     Spacer()
                 }
-                .padding(.vertical, 14)
                 .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                
+                ForEach(tags, id: \.self) { tag in
+                    Button {
+                        searchText = "#" + tag
+                        showResults = true
+                        showSuggestions = false
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "number")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.blue)
+                                .frame(width: 24, height: 24)
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("#\(tag)")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                if let count = hashtagCounts[tag], count > 0 {
+                                    Text("\(count) \(count == 1 ? "post" : "posts")")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            Spacer()
+                            
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 20)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    if tag != tags.last {
+                        Divider()
+                            .padding(.leading, 56)
+                    }
+                }
             }
-            .buttonStyle(.plain)
         }
     }
 
