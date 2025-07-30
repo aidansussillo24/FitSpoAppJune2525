@@ -65,7 +65,10 @@ extension NetworkService {
                         senderId:  sid,
                         text:      d["text"]   as? String,
                         postId:    d["postId"] as? String,
-                        timestamp: ts.dateValue()
+                        timestamp: ts.dateValue(),
+                        profileUserId: d["profileUserId"] as? String,
+                        profileDisplayName: d["profileDisplayName"] as? String,
+                        profileAvatarURL: d["profileAvatarURL"] as? String
                     )
                     onNewMessage(.success(msg))
                 }
@@ -132,6 +135,43 @@ extension NetworkService {
             // bump preview
             db.collection("chats").document(chatId).updateData([
                 "lastMessage":   "[Photo]",
+                "lastTimestamp": Timestamp(date: Date())
+            ])
+            completion(err)
+        }
+    }
+
+    /// Send a profile-share message
+    func sendProfile(
+        chatId: String,
+        profileUserId: String,
+        profileDisplayName: String,
+        profileAvatarURL: String?,
+        completion: @escaping (Error?) -> Void
+    ) {
+        guard let me = Auth.auth().currentUser?.uid else {
+            return completion(NSError(
+                domain: "",
+                code:   -1,
+                userInfo: [NSLocalizedDescriptionKey:"Not signed in"]
+            ))
+        }
+        let db = Firestore.firestore()
+        let data: [String:Any] = [
+            "senderId":  me,
+            "profileUserId": profileUserId,
+            "profileDisplayName": profileDisplayName,
+            "profileAvatarURL": profileAvatarURL as Any,
+            "timestamp": Timestamp(date: Date())
+        ]
+        let msgRef = db.collection("chats")
+            .document(chatId)
+            .collection("messages")
+            .document()
+        msgRef.setData(data) { err in
+            // bump preview
+            db.collection("chats").document(chatId).updateData([
+                "lastMessage":   "[Profile]",
                 "lastTimestamp": Timestamp(date: Date())
             ])
             completion(err)

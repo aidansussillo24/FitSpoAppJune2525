@@ -24,6 +24,7 @@ struct PostCardView: View {
     @State private var navigateToChat  = false
     @State private var showReportSheet = false
     @State private var showDeleteConfirm = false
+    @State private var isSaved = false
 
     @Environment(\.openURL) private var openURL
 
@@ -34,6 +35,7 @@ struct PostCardView: View {
         self.post = post
         self.fixedImageHeight = fixedImageHeight
         self.onLike = onLike
+        _isSaved = State(initialValue: post.isSaved)
     }
 
     // MARK: – Computed properties
@@ -107,7 +109,7 @@ struct PostCardView: View {
                             Label("Report", systemImage: "flag")
                         }
                         Button { savePost() } label: {
-                            Label("Save", systemImage: "bookmark")
+                            Label(isSaved ? "Unsave" : "Save", systemImage: isSaved ? "bookmark.fill" : "bookmark")
                         }
                     }
                 } label: {
@@ -184,6 +186,7 @@ struct PostCardView: View {
         }
         .background { chatNavigationLink }
         .onAppear(perform: fetchAuthor)
+        .onAppear { fetchSavedState() }
     }
 
     // MARK: – Avatar helper
@@ -260,8 +263,19 @@ struct PostCardView: View {
 
     // MARK: – Post actions
     private func savePost() {
-        // TODO: Implement save post functionality
-        print("Save post functionality to be implemented")
+        let original = isSaved
+        isSaved.toggle()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        NetworkService.shared.toggleSavePost(post: post) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let updated):
+                    isSaved = updated.isSaved
+                case .failure:
+                    isSaved = original // revert on error
+                }
+            }
+        }
     }
 
     private func deletePost() {
@@ -274,6 +288,15 @@ struct PostCardView: View {
                 case .failure(let error):
                     print("Failed to delete post: \(error.localizedDescription)")
                 }
+            }
+        }
+    }
+
+    // MARK: – Lifecycle
+    private func fetchSavedState() {
+        NetworkService.shared.isPostSaved(postId: post.id) { result in
+            if case .success(let saved) = result {
+                DispatchQueue.main.async { isSaved = saved }
             }
         }
     }

@@ -48,6 +48,7 @@ struct PostDetailView: View {
     @State private var isDeleting = false
     @State private var showDeleteConfirm = false
     @State private var showReportSheet  = false
+    @State private var isSaved = false // ← ADDED
 
     // ── outfit pins
     @State private var outfitItems : [OutfitItem]
@@ -74,6 +75,7 @@ struct PostDetailView: View {
         self.navTitle = navTitle
         _isLiked     = State(initialValue: post.isLiked)
         _likesCount  = State(initialValue: post.likes)
+        _isSaved     = State(initialValue: post.isSaved) // ← ADDED
         _outfitItems = State(initialValue: post.outfitItems ?? [])
         _outfitTags  = State(initialValue: post.outfitTags  ?? [])
         _showComments = State(initialValue: initialShowComments)
@@ -132,7 +134,10 @@ struct PostDetailView: View {
         }
         .background { chatNavigationLink }
         .task { await ensureHotRank() }
-        .onAppear   { attachListenersAndFetch() }
+        .onAppear   { 
+            attachListenersAndFetch()
+            fetchSavedState() // ← ADDED
+        }
         .onDisappear{ postListener?.remove() }
         .sheet(isPresented: $showHashtagResults) {
             SearchResultsView(query: currentHashtagQuery)
@@ -351,7 +356,7 @@ struct PostDetailView: View {
                     }
                 } else {
                     Button { savePost() } label: {
-                        Label("Save", systemImage: "bookmark")
+                        Label(isSaved ? "Unsave" : "Save", systemImage: isSaved ? "bookmark.fill" : "bookmark")
                     }
                     Button(role: .destructive) { showReportSheet = true } label: {
                         Label("Report", systemImage: "flag")
@@ -459,8 +464,19 @@ struct PostDetailView: View {
 
     // MARK: delete / report / save ------------------------------
     private func savePost() {
-        // TODO: Implement save post functionality
-        print("Save post functionality to be implemented")
+        let original = isSaved
+        isSaved.toggle()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        NetworkService.shared.toggleSavePost(post: post) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let updated):
+                    isSaved = updated.isSaved
+                case .failure:
+                    isSaved = original // revert on error
+                }
+            }
+        }
     }
     
     private func performDelete() {
@@ -630,6 +646,19 @@ struct PostDetailView: View {
                 } else {
                     print("No user found with username: \(cleanUsername)")
                     // Could show an alert or error message to user
+                }
+            }
+        }
+    }
+
+    private func fetchSavedState() {
+        NetworkService.shared.isPostSaved(postId: post.id) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let saved):
+                    self.isSaved = saved
+                case .failure(let err):
+                    print("Error fetching saved state:", err.localizedDescription)
                 }
             }
         }

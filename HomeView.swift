@@ -146,11 +146,12 @@ struct HomeView: View {
             DispatchQueue.main.async {
                 switch res {
                 case .success(let tuple):
-                    posts      = tuple.0
+                    withAnimation(.easeIn) { posts = tuple.0 }
                     cursor     = tuple.1
                     reachedEnd = tuple.1 == nil
                     isLoadingPage = false
                     if !reachedEnd { loadAdditionalForFirstPage() }
+                    updateSaveStates()
                 case .failure(let err):
                     isLoadingPage = false
                     print("Initial load error:", err)
@@ -172,6 +173,7 @@ struct HomeView: View {
                     withAnimation(.easeIn) { posts.append(contentsOf: newOnes) }
                     cursor     = tuple.1
                     reachedEnd = tuple.1 == nil
+                    updateSaveStates()
                 case .failure(let err):
                     print("Next page error:", err)
                 }
@@ -190,6 +192,7 @@ struct HomeView: View {
                     withAnimation(.easeIn) { posts.append(contentsOf: newOnes) }
                     cursor     = tuple.1
                     reachedEnd = tuple.1 == nil
+                    updateSaveStates()
                 case .failure(let err):
                     print("Initial page extend error:", err)
                 }
@@ -214,6 +217,7 @@ struct HomeView: View {
                         cursor     = tuple.1
                         reachedEnd = tuple.1 == nil
                         lastPrefetchIndex = -1
+                        updateSaveStates()
                     case .failure(let err):
                         print("Refresh error:", err)
                     }
@@ -234,6 +238,27 @@ struct HomeView: View {
                     posts[idx] = updated
                 } else if case .failure(let error) = result {
                     print("HomeView: Like toggle failed: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+    
+    // MARK: save state handling
+    private func updateSaveStates() {
+        let postIds = posts.map { $0.id }
+        NetworkService.shared.checkSaveStates(for: postIds) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let saveStates):
+                    for (index, post) in posts.enumerated() {
+                        if let isSaved = saveStates[post.id] {
+                            var updatedPost = post
+                            updatedPost.isSaved = isSaved
+                            posts[index] = updatedPost
+                        }
+                    }
+                case .failure(let error):
+                    print("Error updating save states: \(error.localizedDescription)")
                 }
             }
         }

@@ -371,6 +371,9 @@ struct ExploreView: View {
         sanFranciscoPosts = await loadCityPosts(city: "San Francisco")
         miamiPosts        = await loadCityPosts(city: "Miami")
         chicagoPosts      = await loadCityPosts(city: "Chicago")
+        
+        // Update save states for all loaded posts
+        updateSaveStates()
     }
 
     private func loadTopPosts() async {
@@ -436,6 +439,41 @@ struct ExploreView: View {
         replace(in: &sanFranciscoPosts)
         replace(in: &miamiPosts)
         replace(in: &chicagoPosts)
+    }
+    
+    private func updateSaveStates() {
+        // Collect all post IDs from all arrays
+        let allPostIds = topPosts.map { $0.id } +
+                        newYorkPosts.map { $0.id } +
+                        losAngelesPosts.map { $0.id } +
+                        sanFranciscoPosts.map { $0.id } +
+                        miamiPosts.map { $0.id } +
+                        chicagoPosts.map { $0.id }
+        
+        NetworkService.shared.checkSaveStates(for: allPostIds) { result in
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let saveStates):
+                    func updateArray(_ array: inout [Post]) {
+                        for (index, post) in array.enumerated() {
+                            if let isSaved = saveStates[post.id] {
+                                var updatedPost = post
+                                updatedPost.isSaved = isSaved
+                                array[index] = updatedPost
+                            }
+                        }
+                    }
+                    updateArray(&topPosts)
+                    updateArray(&newYorkPosts)
+                    updateArray(&losAngelesPosts)
+                    updateArray(&sanFranciscoPosts)
+                    updateArray(&miamiPosts)
+                    updateArray(&chicagoPosts)
+                case .failure(let error):
+                    print("Error updating save states in ExploreView: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 }
 

@@ -19,6 +19,9 @@ struct Post: Identifiable, Codable {
     var likes:     Int
     var isLiked:   Bool
 
+    // NEW – saved state for current user
+    var isSaved:  Bool = false
+
     // geo / weather
     let latitude:    Double?
     let longitude:   Double?
@@ -83,6 +86,7 @@ struct Post: Identifiable, Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, userId, imageURL, caption, username, timestamp, likes, isLiked
+        case isSaved // ← added
         case latitude, longitude, temp, weatherIcon, hashtags
         case outfitItems, outfitTags
     }
@@ -91,11 +95,12 @@ struct Post: Identifiable, Codable {
 // Hashable conformance for navigationDestination(item:)
 extension Post: Hashable {
     static func == (lhs: Post, rhs: Post) -> Bool {
-        lhs.id == rhs.id && lhs.likes == rhs.likes && lhs.isLiked == rhs.isLiked
+        lhs.id == rhs.id && lhs.likes == rhs.likes && lhs.isLiked == rhs.isLiked && lhs.isSaved == rhs.isSaved
     }
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
         hasher.combine(likes)
         hasher.combine(isLiked)
+        hasher.combine(isSaved)
     }
 }

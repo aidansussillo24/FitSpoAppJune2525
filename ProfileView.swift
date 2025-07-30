@@ -28,17 +28,24 @@ struct ProfileView: View {
     @State private var email         = ""
     @State private var posts: [Post] = []
     @State private var taggedPosts: [Post] = []
+    @State private var savedPosts: [Post] = []
     @State private var followersCount = 0
     @State private var followingCount = 0
     @State private var isFollowing    = false
     @State private var isLoadingPosts = false
     @State private var isLoadingTagged = false
+    @State private var isLoadingSaved = false
     @State private var errorMessage   = ""
     @State private var showingEdit    = false
 
     // Messaging
     @State private var activeChat: Chat?
     @State private var showChat = false
+    
+    // Profile sharing
+    @State private var showShareSheet = false
+    @State private var shareChat: Chat?
+    @State private var navigateToChat = false
     
     // Tab state
     @State private var selectedTab = 0 // 0=Posts, 1=Tagged, 2=Saved
@@ -73,12 +80,19 @@ struct ProfileView: View {
                 }
             }
             .sheet(isPresented: $showingEdit) { EditProfileView() }
+            .sheet(isPresented: $showShareSheet) { shareSheet }
             .background(
                 Group {
                     if let chat = activeChat {
                         NavigationLink(
                             destination: ChatDetailView(chat: chat),
                             isActive: $showChat
+                        ) { EmptyView() }
+                    }
+                    if let chat = shareChat {
+                        NavigationLink(
+                            destination: ChatDetailView(chat: chat),
+                            isActive: $navigateToChat
                         ) { EmptyView() }
                     }
                 }
@@ -149,7 +163,9 @@ struct ProfileView: View {
                         Button("Edit Style Profile") { showingEdit = true }
                             .buttonStyle(FitSpoButtonStyle(isPrimary: false))
                         
-                        Button("Share Profile") { }
+                        Button("Share Profile") { 
+                            showShareSheet = true
+                        }
                             .buttonStyle(FitSpoButtonStyle(isPrimary: false))
                         
                     } else {
@@ -190,7 +206,7 @@ struct ProfileView: View {
             // Fashion-focused tabs
             HStack(spacing: 0) {
                 tabButton(index: 0, icon: "grid", label: "OUTFITS")
-                tabButton(index: 1, icon: "tag", label: "TAGGED")  
+                tabButton(index: 1, icon: "tag", label: "TAGGED")
                 tabButton(index: 2, icon: "heart", label: "SAVED")
             }
             .background(Color(.systemBackground))
@@ -310,19 +326,68 @@ struct ProfileView: View {
     }
     
     private var savedContent: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "heart")
-                .font(.system(size: 50))
-                .foregroundColor(.secondary)
-            Text("No Saved Posts")
-                .font(.title2)
-                .fontWeight(.bold)
-            Text("Save outfit inspiration to view here.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
+        Group {
+            if isLoadingSaved {
+                ProgressView()
+                    .scaleEffect(1.2)
+                    .padding(60)
+            } else if savedPosts.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "bookmark")
+                        .font(.system(size: 50))
+                        .foregroundColor(.secondary)
+                    Text("No Saved Posts")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text("Save outfit inspiration to view here.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(60)
+            } else {
+                LazyVGrid(columns: columns, spacing: 1) {
+                    ForEach(savedPosts) { post in
+                        NavigationLink {
+                            PostDetailView(post: post)
+                        } label: {
+                            PostCell(post: post)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+            }
         }
-        .padding(60)
+    }
+
+    // MARK: - Profile Sharing
+    private var shareSheet: some View {
+        ShareToUserView { uid in
+            showShareSheet = false
+            shareProfile(to: uid)
+        }
+    }
+    
+    private func shareProfile(to uid: String) {
+        guard let me = Auth.auth().currentUser?.uid else { return }
+        let pair = [me, uid].sorted()
+        NetworkService.shared.createChat(participants: pair) { res in
+            switch res {
+            case .success(let chat):
+                NetworkService.shared.sendProfile(
+                    chatId: chat.id,
+                    profileUserId: userId,
+                    profileDisplayName: displayName.isEmpty ? "Unknown User" : displayName,
+                    profileAvatarURL: avatarURL.isEmpty ? nil : avatarURL
+                ) { _ in }
+                DispatchQueue.main.async {
+                    shareChat = chat
+                    navigateToChat = true
+                }
+            case .failure(let err):
+                print("Chat creation error:", err.localizedDescription)
+            }
+        }
     }
 
     // MARK: – Computed helpers ------------------------------------
@@ -334,7 +399,7 @@ struct ProfileView: View {
             if let url = URL(string: avatarURL), !avatarURL.isEmpty {
                 AsyncImage(url: url) { phase in
                     switch phase {
-                    case .empty:   
+                    case .empty:
                         ProgressView()
                             .frame(width: 100, height: 100)
                     case .success(let img):
@@ -392,6 +457,7 @@ private extension ProfileView {
         loadProfile()
         loadUserPosts()
         loadTaggedPosts()
+        loadSavedPosts()
         loadFollowState()
         loadFollowCounts()
     }
@@ -432,6 +498,25 @@ private extension ProfileView {
                     taggedPosts = tagged
                 case .failure(let error):
                     print("❌ ProfileView error loading tagged posts: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    func loadSavedPosts() {
+        // Only load saved posts for the current user's own profile
+        guard isMe else { return }
+        
+        isLoadingSaved = true
+        NetworkService.shared.fetchSavedPosts { result in
+            DispatchQueue.main.async {
+                isLoadingSaved = false
+                switch result {
+                case .success(let saved):
+                    print("📱 ProfileView received \(saved.count) saved posts")
+                    savedPosts = saved
+                case .failure(let error):
+                    print("❌ ProfileView error loading saved posts: \(error.localizedDescription)")
                 }
             }
         }
