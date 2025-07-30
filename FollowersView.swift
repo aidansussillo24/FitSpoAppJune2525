@@ -21,8 +21,8 @@ struct FollowersView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Search Bar
-            if !followers.isEmpty {
+            // Search Bar - only show when we have data and not loading
+            if !followers.isEmpty && !isLoading {
                 HStack {
                     HStack {
                         Image(systemName: "magnifyingglass")
@@ -53,18 +53,8 @@ struct FollowersView: View {
                 .background(Color(.systemBackground))
             }
             
-            if isLoading {
-                VStack {
-                    Spacer()
-                    ProgressView()
-                        .scaleEffect(1.2)
-                    Text("Loading followers...")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 8)
-                    Spacer()
-                }
-            } else if let error = errorMessage {
+            // Main content area
+            if let error = errorMessage {
                 VStack {
                     Spacer()
                     VStack(spacing: 12) {
@@ -81,7 +71,7 @@ struct FollowersView: View {
                     }
                     Spacer()
                 }
-            } else if followers.isEmpty {
+            } else if followers.isEmpty && !isLoading {
                 VStack {
                     Spacer()
                     VStack(spacing: 12) {
@@ -98,7 +88,7 @@ struct FollowersView: View {
                     }
                     Spacer()
                 }
-            } else if filteredFollowers.isEmpty && !searchText.isEmpty {
+            } else if filteredFollowers.isEmpty && !searchText.isEmpty && !isLoading {
                 VStack {
                     Spacer()
                     VStack(spacing: 12) {
@@ -115,7 +105,7 @@ struct FollowersView: View {
                     }
                     Spacer()
                 }
-            } else {
+            } else if !filteredFollowers.isEmpty {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(filteredFollowers) { user in
@@ -197,12 +187,6 @@ struct FollowersView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Followers")
         .navigationBarTitleDisplayMode(.large)
-        .navigationBarBackButtonHidden(false)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                EmptyView()
-            }
-        }
         .refreshable {
             await loadList(from: "followers")
         }

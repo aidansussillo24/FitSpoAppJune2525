@@ -21,8 +21,8 @@ struct FollowingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Search Bar
-            if !following.isEmpty {
+            // Search Bar - only show when we have data and not loading
+            if !following.isEmpty && !isLoading {
                 HStack {
                     HStack {
                         Image(systemName: "magnifyingglass")
@@ -53,18 +53,8 @@ struct FollowingView: View {
                 .background(Color(.systemBackground))
             }
             
-            if isLoading {
-                VStack {
-                    Spacer()
-                    ProgressView()
-                        .scaleEffect(1.2)
-                    Text("Loading following...")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 8)
-                    Spacer()
-                }
-            } else if let error = errorMessage {
+            // Main content area
+            if let error = errorMessage {
                 VStack {
                     Spacer()
                     VStack(spacing: 12) {
@@ -81,7 +71,7 @@ struct FollowingView: View {
                     }
                     Spacer()
                 }
-            } else if following.isEmpty {
+            } else if following.isEmpty && !isLoading {
                 VStack {
                     Spacer()
                     VStack(spacing: 12) {
@@ -98,7 +88,7 @@ struct FollowingView: View {
                     }
                     Spacer()
                 }
-            } else if filteredFollowing.isEmpty && !searchText.isEmpty {
+            } else if filteredFollowing.isEmpty && !searchText.isEmpty && !isLoading {
                 VStack {
                     Spacer()
                     VStack(spacing: 12) {
@@ -115,7 +105,7 @@ struct FollowingView: View {
                     }
                     Spacer()
                 }
-            } else {
+            } else if !filteredFollowing.isEmpty {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(filteredFollowing) { user in
@@ -197,12 +187,6 @@ struct FollowingView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Following")
         .navigationBarTitleDisplayMode(.large)
-        .navigationBarBackButtonHidden(false)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                EmptyView()
-            }
-        }
         .refreshable {
             await loadList(from: "following")
         }
