@@ -169,6 +169,33 @@ final class NetworkService {
                                                            caption: caption,
                                                            fromUserId: me.uid,
                                                            taggedUsers: tags)
+                                
+                                // Handle mention notifications from caption
+                                let mentions = NetworkService.extractMentions(from: caption)
+                                for name in mentions {
+                                    self.lookupUserId(username: name) { uid in
+                                        guard let uid, uid != me.uid else { return }
+                                        
+                                        // Get the poster's actual display name
+                                        self.db.collection("users").document(me.uid).getDocument { snap, _ in
+                                            let data = snap?.data() ?? [:]
+                                            let displayName = data["displayName"] as? String ?? me.displayName ?? "User"
+                                            let avatar = data["avatarURL"] as? String ?? me.photoURL?.absoluteString
+                                            
+                                            // Debug: Print avatar URL to see what's being fetched
+                                            print("🔍 Post mention notification - User: \(me.uid), DisplayName: \(displayName), Avatar: \(avatar ?? "nil")")
+                                            
+                                            let note = UserNotification(postId: doc.documentID,
+                                                                       fromUserId: me.uid,
+                                                                       fromUsername: displayName,
+                                                                       fromAvatarURL: avatar,
+                                                                       text: caption,
+                                                                       kind: .mention)
+                                            self.addNotification(to: uid, notification: note) { _ in }
+                                        }
+                                    }
+                                }
+                                
                                 completion(.success(()))
                             } else {
                                 completion(.failure(err!))
@@ -311,7 +338,13 @@ final class NetworkService {
                                      .collection("followers").document(me))
             b.setData([:], forDocument: db.collection("users").document(me)
                                      .collection("following").document(userId))
-            b.commit(completion: completion)
+            b.commit { err in
+                if err == nil {
+                    // Send follow notification
+                    self.handleFollowNotification(followedUserId: userId, fromUserId: me)
+                }
+                completion(err)
+            }
         }
 
         func unfollow(userId: String, completion: @escaping (Error?) -> Void) {

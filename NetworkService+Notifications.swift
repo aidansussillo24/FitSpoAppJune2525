@@ -84,13 +84,24 @@ extension NetworkService {
         for name in mentions {
             lookupUserId(username: name) { uid in
                 guard let uid, uid != comment.userId, uid != postOwnerId else { return }
-                let note = UserNotification(postId: comment.postId,
-                                           fromUserId: comment.userId,
-                                           fromUsername: comment.username,
-                                           fromAvatarURL: comment.userPhotoURL,
-                                           text: comment.text,
-                                           kind: .mention)
-                self.addNotification(to: uid, notification: note) { _ in }
+                
+                // Get the commenter's actual display name and avatar
+                self.db.collection("users").document(comment.userId).getDocument { snap, _ in
+                    let data = snap?.data() ?? [:]
+                    let displayName = data["displayName"] as? String ?? comment.username
+                    let avatar = data["avatarURL"] as? String ?? comment.userPhotoURL
+                    
+                    // Debug: Print avatar URL to see what's being fetched
+                    print("🔍 Mention notification - User: \(comment.userId), DisplayName: \(displayName), Avatar: \(avatar ?? "nil")")
+                    
+                    let note = UserNotification(postId: comment.postId,
+                                               fromUserId: comment.userId,
+                                               fromUsername: displayName,
+                                               fromAvatarURL: avatar,
+                                               text: comment.text,
+                                               kind: .mention)
+                    self.addNotification(to: uid, notification: note) { _ in }
+                }
             }
         }
     }
@@ -115,6 +126,76 @@ extension NetworkService {
                                        text: "",
                                        kind: .like)
             self.addNotification(to: postOwnerId, notification: note) { _ in }
+        }
+    }
+
+    // MARK: - Convenience: create notification for a follow
+    func handleFollowNotification(followedUserId: String,
+                                  fromUserId: String) {
+        guard followedUserId != fromUserId else { return }
+
+        db.collection("users").document(fromUserId).getDocument { snap, _ in
+            let data = snap?.data() ?? [:]
+            let name   = data["displayName"] as? String ??
+                         Auth.auth().currentUser?.displayName ?? "User"
+            let avatar = data["avatarURL"] as? String ??
+                         Auth.auth().currentUser?.photoURL?.absoluteString
+
+            let note = UserNotification(postId: "", // No post for follows
+                                       fromUserId: fromUserId,
+                                       fromUsername: name,
+                                       fromAvatarURL: avatar,
+                                       text: "",
+                                       kind: .follow)
+            self.addNotification(to: followedUserId, notification: note) { _ in }
+        }
+    }
+
+    // MARK: - Convenience: create notification for comment like
+    func handleCommentLikeNotification(commentOwnerId: String,
+                                       postId: String,
+                                       fromUserId: String,
+                                       commentText: String) {
+        guard commentOwnerId != fromUserId else { return }
+
+        db.collection("users").document(fromUserId).getDocument { snap, _ in
+            let data = snap?.data() ?? [:]
+            let name   = data["displayName"] as? String ??
+                         Auth.auth().currentUser?.displayName ?? "User"
+            let avatar = data["avatarURL"] as? String ??
+                         Auth.auth().currentUser?.photoURL?.absoluteString
+
+            let note = UserNotification(postId: postId,
+                                       fromUserId: fromUserId,
+                                       fromUsername: name,
+                                       fromAvatarURL: avatar,
+                                       text: commentText,
+                                       kind: .likeComment)
+            self.addNotification(to: commentOwnerId, notification: note) { _ in }
+        }
+    }
+
+    // MARK: - Convenience: create notification for comment reply
+    func handleCommentReplyNotification(commentOwnerId: String,
+                                        postId: String,
+                                        fromUserId: String,
+                                        replyText: String) {
+        guard commentOwnerId != fromUserId else { return }
+
+        db.collection("users").document(fromUserId).getDocument { snap, _ in
+            let data = snap?.data() ?? [:]
+            let name   = data["displayName"] as? String ??
+                         Auth.auth().currentUser?.displayName ?? "User"
+            let avatar = data["avatarURL"] as? String ??
+                         Auth.auth().currentUser?.photoURL?.absoluteString
+
+            let note = UserNotification(postId: postId,
+                                       fromUserId: fromUserId,
+                                       fromUsername: name,
+                                       fromAvatarURL: avatar,
+                                       text: replyText,
+                                       kind: .reply)
+            self.addNotification(to: commentOwnerId, notification: note) { _ in }
         }
     }
 
