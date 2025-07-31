@@ -72,6 +72,15 @@ struct ActivityView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Activity")
         .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("🔍 Test") {
+                    testFollowNotification()
+                }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.blue)
+            }
+        }
         .refreshable {
             await refreshNotifications()
         }
@@ -106,6 +115,18 @@ struct ActivityView: View {
         guard listener == nil, let uid = Auth.auth().currentUser?.uid else { return }
         listener = NetworkService.shared.observeNotifications(for: uid) { list in
             notifications = list.sorted { $0.timestamp > $1.timestamp }
+        }
+    }
+    
+    // MARK: - Testing
+    private func testFollowNotification() {
+        print("🔍 TESTING: User tapped test follow notification button")
+        NetworkService.shared.createTestFollowNotification { error in
+            if let error = error {
+                print("🔍 TESTING ERROR: \(error.localizedDescription)")
+            } else {
+                print("🔍 TESTING: Test follow notification created successfully")
+            }
         }
     }
 }

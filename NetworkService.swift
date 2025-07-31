@@ -183,7 +183,13 @@ final class NetworkService {
                                             let avatar = data["avatarURL"] as? String ?? me.photoURL?.absoluteString
                                             
                                             // Debug: Print avatar URL to see what's being fetched
-                                            print("🔍 Post mention notification - User: \(me.uid), DisplayName: \(displayName), Avatar: \(avatar ?? "nil")")
+                                            print("🔍 POST MENTION NOTIFICATION CREATED")
+                                            print("   User ID: \(me.uid)")
+                                            print("   Display Name: \(displayName)")
+                                            print("   Avatar URL: \(avatar ?? "nil")")
+                                            print("   Post Caption: \(caption)")
+                                            print("   Mentioned User ID: \(uid)")
+                                            print("   =========================================")
                                             
                                             let note = UserNotification(postId: doc.documentID,
                                                                        fromUserId: me.uid,

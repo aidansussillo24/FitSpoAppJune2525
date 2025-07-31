@@ -92,7 +92,18 @@ extension NetworkService {
                     let avatar = data["avatarURL"] as? String ?? comment.userPhotoURL
                     
                     // Debug: Print avatar URL to see what's being fetched
-                    print("🔍 Mention notification - User: \(comment.userId), DisplayName: \(displayName), Avatar: \(avatar ?? "nil")")
+                    print("🔍 COMMENT MENTION NOTIFICATION CREATED")
+                    print("   User ID: \(comment.userId)")
+                    print("   Display Name: \(displayName)")
+                    print("   Avatar URL: \(avatar ?? "nil")")
+                    print("   Comment Text: \(comment.text)")
+                    print("   Mentioned User ID: \(uid)")
+                    print("   =========================================")
+                    
+                    // TODO: Fix avatar URLs for mention notifications
+                    // Issue: Profile pictures showing as grey placeholders instead of actual avatars
+                    // Need to investigate why avatar URLs are nil/empty in user documents
+                    // Consider: Default avatar fallback, avatar upload flow, or placeholder system
                     
                     let note = UserNotification(postId: comment.postId,
                                                fromUserId: comment.userId,
@@ -140,6 +151,14 @@ extension NetworkService {
                          Auth.auth().currentUser?.displayName ?? "User"
             let avatar = data["avatarURL"] as? String ??
                          Auth.auth().currentUser?.photoURL?.absoluteString
+
+            // Debug: Print follow notification details
+            print("🔍 FOLLOW NOTIFICATION CREATED")
+            print("   From User ID: \(fromUserId)")
+            print("   To User ID: \(followedUserId)")
+            print("   Display Name: \(name)")
+            print("   Avatar URL: \(avatar ?? "nil")")
+            print("   =========================================")
 
             let note = UserNotification(postId: "", // No post for follows
                                        fromUserId: fromUserId,
@@ -250,5 +269,22 @@ extension NetworkService {
             .collection("notifications")
             .document(notificationId)
             .delete { err in completion?(err) }
+    }
+    
+    // MARK: - Testing: Create a test follow notification
+    /// Creates a test follow notification for debugging
+    func createTestFollowNotification(completion: @escaping (Error?) -> Void) {
+        guard let currentUserId = Auth.auth().currentUser?.uid else {
+            completion(NSError(domain: "Test", code: -1, userInfo: [NSLocalizedDescriptionKey: "No current user"]))
+            return
+        }
+        
+        print("🔍 TESTING: Creating test follow notification")
+        print("   Current User ID: \(currentUserId)")
+        
+        // Create a test follow notification to yourself (for testing)
+        handleFollowNotification(followedUserId: currentUserId, fromUserId: currentUserId)
+        
+        completion(nil)
     }
 }
