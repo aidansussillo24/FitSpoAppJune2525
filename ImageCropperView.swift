@@ -9,42 +9,21 @@ struct ModernImageCropperView: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    // MARK: - Transform States
     @State private var offset: CGSize = .zero
     @State private var scale: CGFloat = 1.0
-    @State private var selectedAspectRatio: AspectRatio = .square
+    
+    // MARK: - Gesture States
     @GestureState private var dragOffset: CGSize = .zero
     @GestureState private var pinchScale: CGFloat = 1.0
-
-    enum AspectRatio: CaseIterable {
-        case original, square, portrait, landscape
-        
-        var ratio: CGFloat {
-            switch self {
-            case .original: return 0
-            case .square: return 1.0
-            case .portrait: return 1.25 // 4:5
-            case .landscape: return 0.8 // 5:4
-            }
-        }
-        
-        var name: String {
-            switch self {
-            case .original: return "Original"
-            case .square: return "Square"
-            case .portrait: return "Portrait"
-            case .landscape: return "Landscape"
-            }
-        }
-        
-        var icon: String {
-            switch self {
-            case .original: return "rectangle"
-            case .square: return "square"
-            case .portrait: return "rectangle.portrait"
-            case .landscape: return "rectangle.landscape"
-            }
-        }
-    }
+    
+    // MARK: - UI States
+    @State private var showInstructions = true
+    
+    // MARK: - Constants
+    private let minScale: CGFloat = 0.5
+    private let maxScale: CGFloat = 3.0
+    private let cropRatio: CGFloat = 1.0 // Square crop for FitSpo
 
     var body: some View {
         NavigationStack {
@@ -53,15 +32,13 @@ struct ModernImageCropperView: View {
                 Color.black.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // Image area
+                    // Image cropping area
                     GeometryReader { geometry in
                         let frameWidth = geometry.size.width
-                        let frameHeight = selectedAspectRatio.ratio == 0 ? 
-                            frameWidth * (image.size.height / image.size.width) :
-                            frameWidth * selectedAspectRatio.ratio
+                        let frameHeight = frameWidth * cropRatio
                         
                         ZStack {
-                            // Image
+                            // Image container with gestures
                             Image(uiImage: image)
                                 .resizable()
                                 .scaledToFill()
@@ -69,79 +46,111 @@ struct ModernImageCropperView: View {
                                 .offset(x: offset.width + dragOffset.width,
                                         y: offset.height + dragOffset.height)
                                 .scaleEffect(scale * pinchScale)
-                                .gesture(
-                                    DragGesture()
-                                        .updating($dragOffset) { value, state, _ in
-                                            state = value.translation
-                                        }
-                                        .onEnded { value in
-                                            offset.width += value.translation.width
-                                            offset.height += value.translation.height
-                                        }
-                                )
-                                .gesture(
-                                    MagnificationGesture()
-                                        .updating($pinchScale) { value, state, _ in
-                                            state = value
-                                        }
-                                        .onEnded { value in
-                                            scale *= value
-                                        }
-                                )
                                 .clipped()
+                                .contentShape(Rectangle()) // Ensure the entire area is tappable
+                                .gesture(
+                                    SimultaneousGesture(
+                                        DragGesture()
+                                            .updating($dragOffset) { value, state, _ in
+                                                state = value.translation
+                                            }
+                                            .onEnded { value in
+                                                // Accumulate the offset
+                                                offset.width += value.translation.width
+                                                offset.height += value.translation.height
+                                            },
+                                        MagnificationGesture()
+                                            .updating($pinchScale) { value, state, _ in
+                                                state = value
+                                            }
+                                            .onEnded { value in
+                                                // Accumulate the scale
+                                                let newScale = scale * value
+                                                scale = min(maxScale, max(minScale, newScale))
+                                            }
+                                    )
+                                )
                             
-                            // Crop overlay
-                            CropOverlay(aspectRatio: selectedAspectRatio.ratio)
+                            // Crop overlay (non-interactive)
+                            CropOverlay()
+                                .allowsHitTesting(false) // This prevents the overlay from blocking gestures
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     
-                    // Controls
-                    VStack(spacing: 20) {
-                        // Aspect ratio selector
-                        VStack(spacing: 12) {
-                            Text("Aspect Ratio")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
-                            
-                            HStack(spacing: 16) {
-                                ForEach(AspectRatio.allCases, id: \.self) { ratio in
-                                    Button(action: {
-                                        withAnimation(.easeInOut(duration: 0.3)) {
-                                            selectedAspectRatio = ratio
-                                            resetTransform()
-                                        }
-                                    }) {
-                                        VStack(spacing: 4) {
-                                            Image(systemName: ratio.icon)
-                                                .font(.system(size: 20))
-                                                .foregroundColor(selectedAspectRatio == ratio ? .blue : .white)
-                                            
-                                            Text(ratio.name)
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(selectedAspectRatio == ratio ? .blue : .white.opacity(0.7))
-                                        }
-                                        .frame(width: 60, height: 60)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .fill(selectedAspectRatio == ratio ? 
-                                                      Color.blue.opacity(0.2) : 
-                                                      Color.white.opacity(0.1))
-                                        )
-                                    }
+                    // Bottom controls
+                    VStack(spacing: 24) {
+                        // Instructions
+                        if showInstructions {
+                            VStack(spacing: 8) {
+                                HStack(spacing: 16) {
+                                    InstructionItem(
+                                        icon: "hand.draw",
+                                        text: "Drag to move"
+                                    )
+                                    
+                                    InstructionItem(
+                                        icon: "magnifyingglass",
+                                        text: "Pinch to zoom"
+                                    )
+                                }
+                                
+                                Text("Perfect your photo for FitSpo")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(Color.white.opacity(0.1))
+                            )
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    showInstructions = false
                                 }
                             }
                         }
                         
-                        // Instructions
-                        VStack(spacing: 8) {
-                            Text("Drag to move • Pinch to zoom")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
+                        // Action buttons
+                        HStack(spacing: 16) {
+                            // Reset button
+                            Button(action: resetTransform) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Text("Reset")
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color.white.opacity(0.2))
+                                )
+                            }
                             
-                            Text("Tap aspect ratio to change crop shape")
-                                .font(.system(size: 12, weight: .regular))
-                                .foregroundColor(.white.opacity(0.5))
+                            // Next button
+                            Button(action: {
+                                if let cropped = cropImage() {
+                                    onCropped(cropped)
+                                }
+                            }) {
+                                HStack(spacing: 8) {
+                                    Text("Next")
+                                        .font(.system(size: 16, weight: .semibold))
+                                    Image(systemName: "arrow.right")
+                                        .font(.system(size: 16, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Color.blue)
+                                )
+                            }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -157,23 +166,15 @@ struct ModernImageCropperView: View {
                     }
                     .foregroundColor(.white)
                 }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Next") {
-                        if let cropped = cropImage() {
-                            onCropped(cropped)
-                        }
-                    }
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.blue)
-                }
             }
         }
     }
     
     private func resetTransform() {
-        offset = .zero
-        scale = 1.0
+        withAnimation(.easeInOut(duration: 0.3)) {
+            offset = .zero
+            scale = 1.0
+        }
     }
     
     private func cropImage() -> UIImage? {
@@ -183,20 +184,16 @@ struct ModernImageCropperView: View {
             height: offset.height + dragOffset.height
         )
         
-        // Calculate crop area
-        let cropWidth = image.size.width
-        let cropHeight = selectedAspectRatio.ratio == 0 ? 
-            image.size.height :
-            image.size.width * selectedAspectRatio.ratio
-        
-        let cropX = (cropWidth - cropWidth / displayScale) / 2 - finalOffset.width / displayScale
-        let cropY = (cropHeight - cropHeight / displayScale) / 2 - finalOffset.height / displayScale
+        // Calculate crop area for square aspect ratio
+        let cropSize = min(image.size.width, image.size.height)
+        let cropX = (image.size.width - cropSize) / 2 - finalOffset.width / displayScale
+        let cropY = (image.size.height - cropSize) / 2 - finalOffset.height / displayScale
         
         let cropRect = CGRect(
             x: max(0, cropX),
             y: max(0, cropY),
-            width: min(cropWidth, cropWidth / displayScale),
-            height: min(cropHeight, cropHeight / displayScale)
+            width: min(cropSize, cropSize / displayScale),
+            height: min(cropSize, cropSize / displayScale)
         )
         
         guard let cgImage = image.cgImage?.cropping(to: cropRect) else { return nil }
@@ -206,18 +203,14 @@ struct ModernImageCropperView: View {
 
 // MARK: - Crop Overlay
 struct CropOverlay: View {
-    let aspectRatio: CGFloat
-    
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width
-            let height = aspectRatio == 0 ? 
-                width * (geometry.size.height / geometry.size.width) :
-                width * aspectRatio
+            let height = width // Square crop
             
             ZStack {
                 // Semi-transparent overlay
-                Color.black.opacity(0.5)
+                Color.black.opacity(0.6)
                     .mask(
                         Rectangle()
                             .overlay(
@@ -232,33 +225,45 @@ struct CropOverlay: View {
                     .stroke(Color.white, lineWidth: 2)
                     .frame(width: width, height: height)
                 
-                // Corner indicators
-                ForEach(0..<4, id: \.self) { corner in
-                    CropCorner(corner: corner)
-                        .frame(width: 20, height: 20)
-                        .position(
-                            x: corner % 2 == 0 ? 10 : width - 10,
-                            y: corner < 2 ? 10 : height - 10
-                        )
+                // Grid lines (optional, for better composition)
+                VStack(spacing: 0) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        Divider()
+                            .background(Color.white.opacity(0.3))
+                            .frame(height: 1)
+                        Spacer()
+                    }
                 }
+                .frame(width: width, height: height)
+                
+                HStack(spacing: 0) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        Divider()
+                            .background(Color.white.opacity(0.3))
+                            .frame(width: 1)
+                        Spacer()
+                    }
+                }
+                .frame(width: width, height: height)
             }
         }
     }
 }
 
-// MARK: - Crop Corner
-struct CropCorner: View {
-    let corner: Int
+// MARK: - Instruction Item
+struct InstructionItem: View {
+    let icon: String
+    let text: String
     
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.white)
-                .frame(width: 6, height: 6)
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white.opacity(0.8))
             
-            Circle()
-                .stroke(Color.black, lineWidth: 1)
-                .frame(width: 6, height: 6)
+            Text(text)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white.opacity(0.8))
         }
     }
 }
