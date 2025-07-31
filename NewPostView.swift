@@ -23,8 +23,8 @@ struct NewPostView: View {
     // MARK: - Selection
     @State private var selected: PHAsset?
     @State private var preview: UIImage?
-    @State private var showCropper = false
     @State private var collapsed = false
+    @State private var showCropper = false
     @State private var showCaption = false
     
     // MARK: - UI States
@@ -33,8 +33,6 @@ struct NewPostView: View {
     
     // MARK: - Location
     @StateObject private var locationManager = LocationManager.shared
-    
-
     
     @Environment(\.dismiss) private var dismiss
     
@@ -68,11 +66,20 @@ struct NewPostView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Next") {
-                        showCaption = true
+                        showCropper = true
                     }
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(preview != nil ? .blue : .secondary)
                     .disabled(preview == nil)
+                }
+            }
+            .sheet(isPresented: $showCropper) {
+                if let img = preview {
+                    ModernImageCropperView(image: img) { croppedImage in
+                        preview = croppedImage
+                        showCropper = false
+                        showCaption = true
+                    }
                 }
             }
             .background(
@@ -84,13 +91,6 @@ struct NewPostView: View {
                     }
                 } label: { EmptyView() }.hidden()
             )
-            .sheet(isPresented: $showCropper) {
-                if let img = preview {
-                    ImageCropperView(image: img) { cropped in
-                        preview = cropped
-                    }
-                }
-            }
             .alert("Photo Library Access", isPresented: $showPermissionAlert) {
                 Button("Settings") {
                     if let settingsUrl = URL(string: UIApplication.openSettingsURLString) {
@@ -142,28 +142,23 @@ struct NewPostView: View {
                     .cornerRadius(16)
                     .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 4)
                     
-                    // Crop button
-                    Button(action: { 
-                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                        impactFeedback.impactOccurred()
-                        showCropper = true 
+                    // Crop button overlay
+                    Button(action: {
+                        showCropper = true
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: 8) {
                             Image(systemName: "crop")
                                 .font(.system(size: 14, weight: .semibold))
                             Text("Crop")
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.system(size: 14, weight: .semibold))
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color.black.opacity(0.8))
+                        .background(Color.black.opacity(0.7))
                         .cornerRadius(20)
-                        .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
                     }
                     .padding(16)
-                    
-
                 }
             } else {
                 // Empty state
@@ -252,7 +247,7 @@ struct NewPostView: View {
             GeometryReader { geo in
                 Color.clear
                     .preference(key: OffsetKey.self,
-                                value: geo.frame(in: .named("scroll")).minY)
+                               value: geo.frame(in: .named("scroll")).minY)
             }
             .frame(height: 0)
             
@@ -324,7 +319,7 @@ struct NewPostView: View {
         switch status {
         case .notDetermined:
             let granted = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-            if granted != .authorized {
+            if granted != .authorized && granted != .limited {
                 permissionDenied = true
                 isLoadingAssets = false
                 return
@@ -493,13 +488,13 @@ fileprivate struct FixedSizeThumbnail: View {
         isLoading = true
         
         let options = PHImageRequestOptions()
-        options.deliveryMode = .highQualityFormat // Changed from fastFormat for better quality
+        options.deliveryMode = .fastFormat // Use fast format for thumbnails
         options.isNetworkAccessAllowed = true
         options.isSynchronous = false
         
         // Calculate proper thumbnail size based on screen density
         let scale = UIScreen.main.scale
-        let targetSize = CGSize(width: 300 * scale, height: 300 * scale) // Higher resolution for crisp thumbnails
+        let targetSize = CGSize(width: 200 * scale, height: 200 * scale) // Optimized for performance
         
         manager.requestImage(
             for: asset,
