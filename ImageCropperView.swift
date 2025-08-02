@@ -178,26 +178,93 @@ struct ModernImageCropperView: View {
     }
     
     private func cropImage() -> UIImage? {
+        // Get the current display scale
         let displayScale = scale * pinchScale
         let finalOffset = CGSize(
             width: offset.width + dragOffset.width,
             height: offset.height + dragOffset.height
         )
         
-        // Calculate crop area for square aspect ratio
-        let cropSize = min(image.size.width, image.size.height)
-        let cropX = (image.size.width - cropSize) / 2 - finalOffset.width / displayScale
-        let cropY = (image.size.height - cropSize) / 2 - finalOffset.height / displayScale
+        // Debug: Print current values
+        print("🔍 CROP DEBUG:")
+        print("Image size: \(image.size)")
+        print("Display scale: \(displayScale)")
+        print("Final offset: \(finalOffset)")
+        print("Scale: \(scale)")
+        
+        // The crop frame is always square and fills the width of the screen
+        let screenWidth = UIScreen.main.bounds.width
+        
+        // Calculate how the image is displayed
+        let imageAspectRatio = image.size.width / image.size.height
+        let displayHeight = screenWidth / imageAspectRatio
+        
+        // Calculate the scale factors - this is where the issue was
+        let scaleX = image.size.width / screenWidth
+        let scaleY = image.size.height / displayHeight
+        
+        print("Screen width: \(screenWidth)")
+        print("Display height: \(displayHeight)")
+        print("Scale X: \(scaleX)")
+        print("Scale Y: \(scaleY)")
+        
+        // NEW APPROACH: Calculate the crop area based on what's actually visible
+        // The crop frame is a square that fills the screen width
+        let cropFrameSize = screenWidth
+        
+        // Calculate the actual image area being displayed
+        let imageDisplayWidth = screenWidth
+        let imageDisplayHeight = displayHeight
+        
+        // Calculate the scale factor between display and actual image
+        let displayToImageScale = image.size.width / imageDisplayWidth
+        
+        // Convert the offset from screen coordinates to image coordinates
+        let imageOffsetX = finalOffset.width * displayToImageScale
+        let imageOffsetY = finalOffset.height * displayToImageScale
+        
+        print("Image offset X: \(imageOffsetX)")
+        print("Image offset Y: \(imageOffsetY)")
+        
+        // Calculate the crop rectangle
+        // The crop frame is centered on the screen, so we need to find the center of the image
+        let imageCenterX = image.size.width / 2
+        let imageCenterY = image.size.height / 2
+        
+        // Calculate where the crop frame center is in image coordinates
+        let cropCenterX = imageCenterX - imageOffsetX / displayScale
+        let cropCenterY = imageCenterY - imageOffsetY / displayScale
+        
+        // Calculate the crop size in image coordinates
+        let cropSizeInImage = cropFrameSize * displayToImageScale / displayScale
+        
+        // Calculate the crop rectangle
+        let cropX = cropCenterX - cropSizeInImage / 2
+        let cropY = cropCenterY - cropSizeInImage / 2
+        
+        print("Crop center X: \(cropCenterX)")
+        print("Crop center Y: \(cropCenterY)")
+        print("Crop size in image: \(cropSizeInImage)")
+        print("Crop X: \(cropX)")
+        print("Crop Y: \(cropY)")
         
         let cropRect = CGRect(
             x: max(0, cropX),
             y: max(0, cropY),
-            width: min(cropSize, cropSize / displayScale),
-            height: min(cropSize, cropSize / displayScale)
+            width: min(cropSizeInImage, image.size.width - max(0, cropX)),
+            height: min(cropSizeInImage, image.size.height - max(0, cropY))
         )
         
-        guard let cgImage = image.cgImage?.cropping(to: cropRect) else { return nil }
-        return UIImage(cgImage: cgImage)
+        print("Final crop rect: \(cropRect)")
+        
+        guard let cgImage = image.cgImage?.cropping(to: cropRect) else { 
+            print("❌ Failed to crop image")
+            return nil 
+        }
+        
+        let croppedImage = UIImage(cgImage: cgImage)
+        print("✅ Cropped image size: \(croppedImage.size)")
+        return croppedImage
     }
 }
 
